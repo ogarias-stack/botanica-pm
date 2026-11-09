@@ -10,27 +10,36 @@ import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, StringConstraints
 from openai import OpenAIError
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.exc import SQLAlchemyError
 
-from agente import HitoNoEncontrado, acusar_alerta, agente, agente_partes
-from agente import RespuestaDocumentalInvalida, agente_chat
-from agente import ErrorFase, abrir_proyecto, avanzar_fase, completar_tarea, consultar_proyecto
+from agente import (
+    ErrorFase,
+    HitoNoEncontrado,
+    RespuestaDocumentalInvalida,
+    abrir_proyecto,
+    acusar_alerta,
+    agente,
+    agente_chat,
+    agente_partes,
+    avanzar_fase,
+    completar_tarea,
+    consultar_proyecto,
+    descripcion_tarea_pendiente,
+    sugerir_evidencia,
+)
 from models import FRENTE_CIMENTACION, ROLES_TECNICOS
 
-# .env adicional: BOTANICA_EQUIPO_IDS=id-jefe,id-residente
-# ALERTAS_WEBHOOK_URL=https://...
-# ALERTAS_WEBHOOK_TOKEN=...
-# ALERTAS_HORAS_ACUSE=24
-# OLI_ALERTA_EMAIL=... y/o OLI_ALERTA_WHATSAPP=...
-# El equipo usa JWT del emisor de confianza con los roles configurados.
 app = FastAPI(title="Botánica · Agente PM de obra")
 bearer = HTTPBearer(auto_error=False)
 logger_chat = logging.getLogger(__name__)
+
 ALGORITMO = "RS256"
 VIGENCIA_TOKEN_SEGUNDOS = 900
-FrenteId = Annotated[str, StringConstraints(min_length=1, max_length=80, pattern=r"^[a-z0-9-]+$")]
+FrenteId = Annotated[
+    str, StringConstraints(min_length=1, max_length=80, pattern=r"^[a-z0-9-]+$")
+]
 
 
 class Actor(NamedTuple):
@@ -59,6 +68,7 @@ def verificar_actor(
     )
     if credenciales is None:
         raise error_token
+
     try:
         claims = jwt.decode(
             credenciales.credentials,
@@ -72,7 +82,11 @@ def verificar_actor(
         raise error_token from None
 
     actor_id, rol = claims["sub"], claims["role"]
-    equipo = {item.strip() for item in os.getenv("BOTANICA_EQUIPO_IDS", "").split(",") if item.strip()}
+    equipo = {
+        item.strip()
+        for item in os.getenv("BOTANICA_EQUIPO_IDS", "").split(",")
+        if item.strip()
+    }
     if actor_id == os.environ["OLI_ACTOR_ID"] and rol == "oli":
         return Actor(actor_id, rol)
     if actor_id in equipo and isinstance(rol, str) and rol in ROLES_TECNICOS:
@@ -92,6 +106,7 @@ if os.getenv("APP_ENV") == "development":
             raise HTTPException(503, "Emisión de desarrollo sin configurar.")
         if not secreto or not compare_digest(secreto.encode(), configurado.encode()):
             raise HTTPException(403, "Acceso de desarrollo denegado.")
+
         ahora = datetime.now(timezone.utc)
         token = jwt.encode(
             {
@@ -106,8 +121,11 @@ if os.getenv("APP_ENV") == "development":
             algorithm=ALGORITMO,
         )
         response.headers["Cache-Control"] = "no-store"
-        return {"access_token": token, "token_type": "bearer",
-                "expires_in": VIGENCIA_TOKEN_SEGUNDOS}
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_in": VIGENCIA_TOKEN_SEGUNDOS,
+        }
 
 
 @app.get("/botanica/estado")
@@ -117,15 +135,22 @@ def consultar_estado(
     frente_id: Annotated[FrenteId, Query()] = FRENTE_CIMENTACION,
 ):
     try:
-        resultado = agente.invoke({"actor_id_verificado": actor.id, "frente_id": frente_id})
+        resultado = agente.invoke({
+            "actor_id_verificado": actor.id,
+            "frente_id": frente_id,
+        })
     except HitoNoEncontrado:
         raise HTTPException(404, "Hito no encontrado.") from None
+
     response.headers["Cache-Control"] = "no-store"
     return {"respuesta": resultado["respuesta"]}
 
 
 @app.post("/botanica/parte")
-def registrar_parte(parte: ParteDiario, actor: Annotated[Actor, Depends(verificar_actor)]):
+def registrar_parte(
+    parte: ParteDiario,
+    actor: Annotated[Actor, Depends(verificar_actor)],
+):
     try:
         resultado = agente_partes.invoke({
             **parte.model_dump(),
@@ -141,15 +166,21 @@ def registrar_parte(parte: ParteDiario, actor: Annotated[Actor, Depends(verifica
 
 
 @app.post("/botanica/alertas/{alerta_id}/acuse", status_code=204)
-def registrar_acuse(alerta_id: int, actor: Annotated[Actor, Depends(verificar_actor)]):
+def registrar_acuse(
+    alerta_id: int,
+    actor: Annotated[Actor, Depends(verificar_actor)],
+):
     if actor.rol not in ROLES_TECNICOS:
         raise HTTPException(403, "El acuse corresponde al equipo técnico.")
     if not acusar_alerta(alerta_id, actor.id):
         raise HTTPException(404, "Alerta sin acuse disponible.")
     return Response(status_code=204)
 
+
 class PreguntaDocumental(BaseModel):
-    pregunta: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    pregunta: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ]
 
 
 @app.post("/botanica/chat")
@@ -160,15 +191,20 @@ def consultar_chat(
 ) -> dict[str, str]:
     try:
         resultado = agente_chat.invoke({"pregunta": consulta.pregunta})
-    except (OpenAIError, SQLAlchemyError, RespuestaDocumentalInvalida, KeyError, ValueError) as error:
-        logger_chat.warning("Consulta documental fallida: %s", type(error).__name__)
+    except (
+        OpenAIError, SQLAlchemyError, RespuestaDocumentalInvalida, KeyError, ValueError
+    ) as error:
+        logger_chat.warning("Consulta documental fallida: %s", str(error) if isinstance(error, RespuestaDocumentalInvalida) else type(error).__name__)
         raise HTTPException(503, "No se pudo completar la consulta documental.") from None
 
     response.headers["Cache-Control"] = "no-store"
     return {"respuesta": resultado["respuesta"]}
 
+
 class AperturaProyecto(BaseModel):
-    nombre: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    nombre: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)
+    ]
     presupuesto: Annotated[Decimal, Field(gt=0, max_digits=16, decimal_places=2)]
 
 
@@ -216,6 +252,31 @@ def avanzar_proyecto_http(
 
 @app.put("/proyectos/{proyecto_id}/tareas/{tarea_id}")
 def completar_tarea_http(
-    proyecto_id: str, tarea_id: int, datos: EvidenciaTarea, director: Director,
+    proyecto_id: str,
+    tarea_id: int,
+    datos: EvidenciaTarea,
+    director: Director,
 ) -> dict:
-    return completar_tarea(proyecto_id, tarea_id, datos.referencia_evidencia, director.id)
+    return completar_tarea(
+        proyecto_id, tarea_id, datos.referencia_evidencia, director.id
+    )
+
+
+@app.get("/proyectos/{proyecto_id}/tareas/{tarea_id}/evidencia")
+def buscar_evidencia_http(
+    proyecto_id: str,
+    tarea_id: int,
+    director: Director,
+    response: Response,
+) -> dict[str, bool | str]:
+    try:
+        descripcion = descripcion_tarea_pendiente(proyecto_id, tarea_id)
+        resultado = sugerir_evidencia(descripcion, proyecto_id)
+    except (
+        OpenAIError, SQLAlchemyError, RespuestaDocumentalInvalida, KeyError, ValueError
+    ) as error:
+        logger_chat.warning("Búsqueda de evidencia fallida: %s", type(error).__name__)
+        raise HTTPException(503, "No se pudo verificar la evidencia documental.") from None
+
+    response.headers["Cache-Control"] = "no-store"
+    return resultado

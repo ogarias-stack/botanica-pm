@@ -1,8 +1,3 @@
-# app_visual.py
-# El selector conserva los proyectos abiertos en la sesión. Para recuperar
-# uno existente, carga su ID. El panel de obra y el chat siguen ligados a Botánica.
-# Probado con FastAPI, PostgreSQL y JWT reales. Respuestas de IA simuladas.
-
 from datetime import date
 from urllib.parse import quote
 
@@ -37,6 +32,7 @@ def limpiar_sesion():
         "proyectos_conocidos",
         "proyecto_elegido",
         "aviso_proyectos",
+        "evidencias_tareas",
         "respuesta_chat",
         "id_proyecto_manual",
     ):
@@ -83,7 +79,7 @@ def consultar_api(token, metodo, ruta, *, cabeceras=None, **opciones):
 
 
 def consultar_bd(sentencia):
-    # Solo se usa después de validar el JWT en este servidor.
+    # Se usa después de validar el JWT.
     try:
         with obtener_motor().connect() as db:
             return db.execute(
@@ -182,6 +178,32 @@ def renderizar_proyectos(token, actor):
         if tarea["completada"] or proyecto["cerrado"]:
             continue
 
+        evidencias = st.session_state.setdefault("evidencias_tareas", {})
+        clave = (proyecto_id, tarea_id)
+
+        if st.button("🔍 Buscar evidencia", key=f"evidencia-{proyecto_id}-{tarea_id}"):
+            evidencias.pop(clave, None)
+            with st.spinner("Buscando evidencia en los documentos del proyecto…"):
+                resultado = consultar_api(
+                    token, "GET", f"{ruta}/tareas/{tarea_id}/evidencia"
+                )
+            if resultado is not None:
+                evidencias[clave] = resultado
+
+        sugerencia = evidencias.get(clave)
+        if sugerencia is not None:
+            if sugerencia["encontrado"]:
+                st.info(
+                    f"Evidencia encontrada en {sugerencia['archivo']} "
+                    f"({sugerencia['ubicacion']}): «{sugerencia['cita']}»"
+                )
+                st.caption(sugerencia["mensaje"])
+            else:
+                st.warning(
+                    "No se ha encontrado evidencia documental para esta tarea. "
+                    "Revisa los documentos o súbelos."
+                )
+
         with st.form(f"completar-{tarea_id}"):
             evidencia = st.text_input(
                 "Referencia de evidencia",
@@ -216,7 +238,6 @@ def renderizar_proyectos(token, actor):
         else "Avanzar a la siguiente fase"
     )
     if st.button(etiqueta, type="primary", width="stretch"):
-        # Envía la revisión que el usuario tenía a la vista.
         datos = consultar_api(
             token,
             "POST",
