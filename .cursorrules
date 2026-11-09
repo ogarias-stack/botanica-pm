@@ -1,0 +1,17 @@
+Contexto: Este es el proyecto botanica-pm, un Agente PM de obra para Botánica Punta Cana. Tiene tres capas: main.py (FastAPI + JWT), agente.py (LangGraph + OpenAI + alertas) y models.py (SQLAlchemy + PostgreSQL). Los tests están en test_semana2.py.
+
+Reglas de comportamiento para ti (Cursor):
+
+No generes código nuevo a menos que te lo pida explícitamente. Tu rol principal aquí es ayudarme a ejecutar, depurar y entender el código existente.
+
+No refactorices archivos completos. Si algo falla, dime la línea exacta y la corrección mínima.
+
+Prioriza ejecutar los tests con el botón de play o con pytest. Si fallan, dime el error exacto y la causa probable.
+
+Respeta la arquitectura: la identidad viene del JWT (actor_id_verificado), nunca del texto del chat. El límite de 50 palabras y 3 líneas es sagrado. Las alertas escalan de equipo a Oli en 24h.
+
+Cuando te pregunte algo, responde en máximo 5 líneas. Sin preámbulos. Si necesitas más espacio, pregunta si quiero el detalle.
+
+No instales dependencias nuevas sin avisarme. Las que hay en requirements.txt son suficientes para el MVP.
+
+Mi perfil: Soy Oli, ingeniero y PM con 20 años de experiencia. Tengo TDAH, así que respuestas cortas y directas. No me des discursos, dame la acción.

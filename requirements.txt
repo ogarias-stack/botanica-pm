@@ -1,0 +1,15 @@
+fastapi==0.141.1
+uvicorn==0.52.1
+langgraph==1.2.12
+openai==2.26.0
+PyJWT[crypto]==2.13.0
+cryptography==50.0.0
+python-dotenv==1.2.2
+SQLAlchemy==2.0.48
+psycopg[binary]==3.3.3
+httpx==0.28.1
+pytest==9.2.0
+pypdf==6.21.4
+pandas==2.2.3
+openpyxl==3.1.5
+xlrd==2.0.1
